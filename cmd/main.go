@@ -17,88 +17,91 @@ limitations under the License.
 package main
 
 import (
-	"flag"
+	"fmt"
 	"os"
+	"path/filepath"
 
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
-	// to ensure that exec-entrypoint and run can make use of them.
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
-
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	kingpin "github.com/alecthomas/kingpin/v2"
+	"github.com/joho/godotenv"
+	apis "github.com/matteogastaldello/bitwarden-provider/api"
+	"github.com/matteogastaldello/bitwarden-provider/internal/controllers"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	//+kubebuilder:scaffold:imports
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	"github.com/krateoplatformops/provider-runtime/pkg/controller"
+	"github.com/krateoplatformops/provider-runtime/pkg/logging"
+	"github.com/krateoplatformops/provider-runtime/pkg/ratelimiter"
+	"github.com/stoewer/go-strcase"
 )
 
-var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+const (
+	providerName = "Bitwarden"
 )
-
-func init() {
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
-	//+kubebuilder:scaffold:scheme
-}
 
 func main() {
-	var metricsAddr string
-	var enableLeaderElection bool
-	var probeAddr string
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
-	opts := zap.Options{
-		Development: true,
+	envVarPrefix := fmt.Sprintf("%s_PROVIDER", strcase.UpperSnakeCase(providerName))
+
+	var (
+		app = kingpin.New(filepath.Base(os.Args[0]), fmt.Sprintf("Krateo %s Provider.", providerName)).
+			DefaultEnvars()
+		debug = app.Flag("debug", "Run with debug logging.").Short('d').
+			OverrideDefaultFromEnvar(fmt.Sprintf("%s_DEBUG", envVarPrefix)).
+			Bool()
+		syncPeriod = app.Flag("sync", "Controller manager sync period such as 300ms, 1.5h, or 2h45m").Short('s').
+				Default("1h").
+				Duration()
+		pollInterval = app.Flag("poll", "Poll interval controls how often an individual resource should be checked for drift.").
+				Default("2m").
+				OverrideDefaultFromEnvar(fmt.Sprintf("%s_POLL_INTERVAL", envVarPrefix)).
+				Duration()
+		maxReconcileRate = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").
+					Default("5").
+					OverrideDefaultFromEnvar(fmt.Sprintf("%s_MAX_RECONCILE_RATE", envVarPrefix)).
+					Int()
+		leaderElection = app.Flag("leader-election", "Use leader election for the controller manager.").
+				Short('l').
+				Default("false").
+				OverrideDefaultFromEnvar(fmt.Sprintf("%s_LEADER_ELECTION", envVarPrefix)).
+				Bool()
+	)
+	kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	zl := zap.New(zap.UseDevMode(*debug))
+	log := logging.NewLogrLogger(zl.WithName(fmt.Sprintf("%s-provider", strcase.KebabCase(providerName))))
+	if *debug {
+		// The controller-runtime runs with a no-op logger by default. It is
+		// *very* verbose even at info level, so we only provide it a real
+		// logger when we're running in debug mode.
+		ctrl.SetLogger(zl)
 	}
-	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	//Loading env variables
+	err := godotenv.Load(".env")
+	kingpin.FatalIfError(err, "Error loading .env file")
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "0153168f.matteogastaldello.provider",
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
+	log.Debug("Starting", "sync-period", syncPeriod.String())
+
+	cfg, err := ctrl.GetConfig()
+	kingpin.FatalIfError(err, "Cannot get API server rest config")
+
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+		LeaderElection:   *leaderElection,
+		LeaderElectionID: fmt.Sprintf("leader-election-%s-provider", strcase.KebabCase(providerName)),
+		Cache:            cache.Options{SyncPeriod: syncPeriod},
+		Metrics:          server.Options{BindAddress: ":8080"},
 	})
-	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+	kingpin.FatalIfError(err, "Cannot create controller manager")
+
+	o := controller.Options{
+		Logger:                  log,
+		MaxConcurrentReconciles: *maxReconcileRate,
+		PollInterval:            *pollInterval,
+		GlobalRateLimiter:       ratelimiter.NewGlobal(*maxReconcileRate),
 	}
 
-	//+kubebuilder:scaffold:builder
-
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
-	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
-	}
-
-	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
-	}
+	kingpin.FatalIfError(apis.AddToScheme(mgr.GetScheme()), "Cannot add APIs to scheme")
+	kingpin.FatalIfError(controllers.Setup(mgr, o), "Cannot setup controllers")
+	kingpin.FatalIfError(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")
 }
