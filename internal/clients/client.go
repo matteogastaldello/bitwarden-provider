@@ -89,5 +89,5 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("Bitwarden cli-API: %s (%s, %d)", e.Message)
+	return fmt.Sprintf("Bitwarden cli-API: %s", e.Message)
 }

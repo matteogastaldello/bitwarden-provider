@@ -68,9 +68,6 @@ type BitwardenSecretStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
-//+kubebuilder:resource:scope=Cluster,categories={krateo,github}
-//+kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
-//+kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
 
 // BitwardenSecret is the Schema for the bitwardensecrets API
 type BitwardenSecret struct {
