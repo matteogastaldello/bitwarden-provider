@@ -36,27 +36,44 @@ type URI struct {
 }
 
 type Login struct {
+	// +optional
 	Uris     []URI  `json:"uris"`
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Totp     string `json:"totp"`
+	// +optional
+	Totp string `json:"totp"`
+}
+
+type Secret struct {
+	// +optional
+	OrganizationID string `json:"organizationid"`
+	// +optional
+	CollectionIDs string `json:"collectionids"`
+	// +optional
+	FolderID *string `json:"folderid"`
+	Type     int     `json:"type"`
+	// +optional
+	Name string `json:"name"`
+	// +optional
+	Id string `json:"id"`
+	// +optional
+	Notes *string `json:"notes"`
+	// +optional
+	Favorite bool `json:"favorite"`
+	// +optional
+	Fields []Field `json:"fields"`
+	Login  Login   `json:"login"`
+	// +optional
+	Reprompt int `json:"reprompt"`
 }
 
 // BitwardenSecretSpec defines the desired state of BitwardenSecret
 type BitwardenSecretSpec struct {
 	rtv1.ManagedSpec `json:",inline"`
 
-	Credentials    *rtv1.CredentialSelectors `json:"credentials"`
-	OrganizationID string                    `json:"organizationid"`
-	CollectionIDs  string                    `json:"collectionids"`
-	FolderID       *string                   `json:"folderid"`
-	Type           int                       `json:"type"`
-	Name           string                    `json:"name"`
-	Notes          *string                   `json:"notes"`
-	Favorite       bool                      `json:"favorite"`
-	Fields         []Field                   `json:"fields"`
-	Login          Login                     `json:"login"`
-	Reprompt       int                       `json:"reprompt"`
+	//Credentials    *rtv1.CredentialSelectors `json:"credentials"`
+
+	Secret `json:"secret"`
 }
 
 // BitwardenSecretStatus defines the observed state of BitwardenSecret

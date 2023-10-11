@@ -1,0 +1,19 @@
+apiVersion: bitwarden.provider.matteogastaldello.provider/v1
+kind: BitwardenSecret
+metadata:
+  labels:
+    app.kubernetes.io/name: bitwardensecret
+    app.kubernetes.io/instance: bitwardensecret-sample
+    app.kubernetes.io/part-of: bitwarden-controller
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: bitwarden-controller
+  name: bitwardensecret-sample
+  annotations:
+    krateo.io/management-policy : "observe-create-update"
+spec:
+  secret:
+    name: "Provider4"
+    type: 1
+    login: 
+      username: "matteo"
+      password: "bcd"

@@ -2,48 +2,51 @@ package secrets
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"path"
+	"reflect"
 
 	"github.com/lucasepe/httplib"
+	bwv1 "github.com/matteogastaldello/bitwarden-provider/api/secret/v1"
 	client "github.com/matteogastaldello/bitwarden-provider/internal/clients"
+	"github.com/mitchellh/mapstructure"
+	"github.com/pkg/errors"
 )
 
-type Field struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-	Type  int    `json:"type"`
+type Data interface{}
+
+type ResponseGeneric struct {
+	Success bool    `json:"success"`
+	Message *string `json:"message"`
+	Data    Data    `json:"data"`
 }
 
-type URI struct {
-	Match int    `json:"match"`
-	URI   string `json:"uri"`
+func (m *ResponseGeneric) ValidData() error {
+
+	if reflect.TypeOf(m.Data) != reflect.TypeOf(bwv1.Secret{}) || m.Message == nil {
+		fmt.Println(reflect.TypeOf(m.Data), reflect.TypeOf(bwv1.Secret{}), "message:", m.Message)
+		return errors.New("Not a valid data field")
+	}
+	return nil
+	// switch m.Data.(type) {
+	// case string:
+	// 	// handle string
+	// 	return nil
+	// case bwv1.Secret:
+	// 	// handle bwv1.Secret
+	// 	return nil
+	// default:
+	// 	// handle unexpected type
+	// 	return errors.New("Not a valid data field")
+	// }
 }
 
-type Login struct {
-	Uris     []URI  `json:"uris"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Totp     string `json:"totp"`
-}
-
-type Secret struct {
-	OrganizationID string  `json:"organizationid"`
-	CollectionIDs  string  `json:"collectionids"`
-	FolderID       *string `json:"folderid"`
-	Type           int     `json:"type"`
-	Name           string  `json:"name"`
-	Notes          *string `json:"notes"`
-	Favorite       bool    `json:"favorite"`
-	Fields         []Field `json:"fields"`
-	Login          Login   `json:"login"`
-	Reprompt       int     `json:"reprompt"`
-}
-
-type SecretResponse struct {
-	Success bool   `json:"success"`
-	Data    Secret `json:"data"`
-}
+// type SecretResponse struct {
+// 	Success bool        `json:"success"`
+// 	Data    bwv1.Secret `json:"data"`
+// }
 
 // func Get(ctx context.Context, cli *azuredevops.Client, opts GetOptions) (bool, map[string]interface{}) {
 // 	resp, err := http.Get(fmt.Sprintf("%s/object/item/%s", bw_server, id))
@@ -68,7 +71,7 @@ type SecretResponse struct {
 
 // Get retrieve a git repository.
 // GET https://dev.azure.com/{organization}/{project}/_apis/git/repositories/{repositoryId}?api-version=7.0
-func (s *SecretResponse) Get(ctx context.Context, cli *client.Client, secretId string) (*Secret, error) {
+func (s *ResponseGeneric) Get(ctx context.Context, cli *client.Client, secretId string) (*bwv1.Secret, error) {
 	uri, err := httplib.NewURLBuilder(httplib.URLBuilderOptions{
 		BaseURL: cli.BaseURL(client.Default),
 		Path:    path.Join("object/item", secretId),
@@ -83,7 +86,7 @@ func (s *SecretResponse) Get(ctx context.Context, cli *client.Client, secretId s
 	req = req.WithContext(ctx)
 
 	apiErr := &client.APIError{}
-	val := &Secret{}
+	val := &bwv1.Secret{}
 
 	err = httplib.Fire(cli.HTTPClient(), req, httplib.FireOptions{
 		ResponseHandler: httplib.FromJSON(val),
@@ -94,29 +97,121 @@ func (s *SecretResponse) Get(ctx context.Context, cli *client.Client, secretId s
 
 	return val, err
 }
-func Exists(ctx context.Context, cli *client.Client, secretId string) (bool, error) {
+func Exists(ctx context.Context, cli *client.Client, secretId string) (*bool, error) {
 	uri, err := httplib.NewURLBuilder(httplib.URLBuilderOptions{
 		BaseURL: cli.BaseURL(client.Default),
 		Path:    path.Join("object/item", secretId),
 	}).Build()
+	retVal := false
 	if err != nil {
-		return false, err
+		return &retVal, nil
 	}
 	req, err := httplib.Get(uri.String())
 	if err != nil {
-		return false, err
+		return &retVal, nil
 	}
 	req = req.WithContext(ctx)
 
-	apiErr := &client.APIError{}
-	val := &SecretResponse{}
+	//apiErr := &client.APIError{}
+	val := &ResponseGeneric{}
 
+	err = httplib.Fire(cli.HTTPClient(), req, httplib.FireOptions{
+		ResponseHandler: httplib.FromJSON(val),
+		// Validators: []httplib.HandleResponseFunc{
+		// 	httplib.ErrorJSON(apiErr, http.StatusOK), httplib.ErrorJSON(apiErr, http.StatusBadRequest),
+		// },
+	})
+	if err != nil {
+		return &retVal, err
+	}
+
+	// err = val.ValidData()
+	// if err != nil {
+	// 	return false, err
+	// }
+
+	return &val.Success, nil
+}
+
+func Create(ctx context.Context, cli *client.Client, secret bwv1.Secret) (*bwv1.Secret, error) {
+	uri, err := httplib.NewURLBuilder(httplib.URLBuilderOptions{
+		BaseURL: cli.BaseURL(client.Default),
+		Path:    path.Join("object/item"),
+	}).Build()
+	if err != nil {
+		return nil, errors.New("error occurred building uri")
+	}
+	b, err := json.Marshal(secret)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(string(b))
+	req, err := httplib.Post(uri.String(), httplib.ToJSON(secret))
+	if err != nil {
+		return nil, errors.New("error occurred making POST req")
+	}
+	req.Header.Add("Content-Type", "application/json")
+	req = req.WithContext(ctx)
+
+	apiErr := &client.APIError{}
+	val := &ResponseGeneric{}
 	err = httplib.Fire(cli.HTTPClient(), req, httplib.FireOptions{
 		ResponseHandler: httplib.FromJSON(val),
 		Validators: []httplib.HandleResponseFunc{
 			httplib.ErrorJSON(apiErr, http.StatusOK),
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	sec := bwv1.Secret{}
+	err = mapstructure.Decode(val.Data, &sec)
+	if err != nil {
+		return nil, err
+	}
+	return &sec, nil
+}
 
-	return val.Success, err
+func Delete(ctx context.Context, cli *client.Client, secretId string) (bool, error) {
+	uri, err := httplib.NewURLBuilder(httplib.URLBuilderOptions{
+		BaseURL: cli.BaseURL(client.Default),
+		Path:    path.Join("object/item", secretId),
+	}).Build()
+	if err != nil {
+		return false, nil
+	}
+	req, err := httplib.Delete(uri.String())
+	if err != nil {
+		return false, nil
+	}
+	req = req.WithContext(ctx)
+
+	//apiErr := &client.APIError{}
+	val := &ResponseGeneric{}
+
+	err = httplib.Fire(cli.HTTPClient(), req, httplib.FireOptions{
+		ResponseHandler: httplib.FromJSON(val),
+		// Validators: []httplib.HandleResponseFunc{
+		// 	httplib.ErrorJSON(apiErr, http.StatusOK), httplib.ErrorJSON(apiErr, http.StatusBadRequest),
+		// },
+	})
+	if err != nil {
+		return false, err
+	}
+	b, err := json.Marshal(val)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(string(b))
+
+	if err != nil {
+		return false, err
+	}
+
+	// err = val.ValidData()
+	// if err != nil {
+	// 	return false, err
+	// }
+
+	return val.Success, nil
 }

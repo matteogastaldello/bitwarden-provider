@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	prv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
@@ -11,6 +12,7 @@ import (
 
 	"k8s.io/client-go/tools/record"
 
+	"github.com/krateoplatformops/provider-runtime/pkg/meta"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -67,12 +69,6 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (reconcile
 		return nil, errors.New(errNotBitwardenSecret)
 	}
 
-	// opts, err := resolvers.ResolveConnectorConfig(ctx, c.kube, cr.Spec.ConnectorConfigRef)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// opts.Verbose = meta.IsVerbose(cr)
-
 	return &external{
 		kube:  c.kube,
 		log:   c.log,
@@ -89,7 +85,10 @@ type external struct {
 }
 
 func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler.ExternalObservation, error) {
+	fmt.Print("\nOBSERVE\n")
+
 	resp, err := bwclient.Unlock(ctx, e.bwCli, os.Getenv("BW_PASSWORD"))
+
 	if err != nil {
 		return reconciler.ExternalObservation{}, err
 	}
@@ -105,12 +104,12 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 	status := cr.Status.DeepCopy()
 	spec := cr.Spec.DeepCopy()
 
-	ok, err = secrets.Exists(ctx, e.bwCli, status.SecretId)
-	if err != nil {
+	res, err := secrets.Exists(ctx, e.bwCli, status.SecretId)
+	if err != nil && res == nil {
 		return reconciler.ExternalObservation{}, err
 	}
 
-	if ok {
+	if *res {
 		e.log.Debug("Secret already exists", "id", status.SecretId, "name", spec.Name)
 		e.rec.Eventf(cr, corev1.EventTypeNormal, "AlredyExists", "Secret '%s/%s' already exists", status.SecretId, spec.Name)
 
@@ -121,7 +120,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		}, nil
 	}
 
-	e.log.Debug("Repo does not exists", "id", status.SecretId, "name", spec.Name)
+	e.log.Debug("Secret does not exists", "id", status.SecretId, "name", spec.Name)
 
 	return reconciler.ExternalObservation{
 		ResourceExists:   false,
@@ -134,9 +133,50 @@ func (e *external) Update(ctx context.Context, mg resource.Managed) error {
 }
 
 func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
-	return nil // noop
+	fmt.Println("DELETE")
+	cr, ok := mg.(*bwv1.BitwardenSecret)
+	if !ok {
+		return errors.New(errNotBitwardenSecret)
+	}
+
+	if condition := meta.IsActionAllowed(cr, meta.ActionDelete); !condition {
+		return errors.New("Action not allowed")
+	}
+
+	cr.SetConditions(prv1.Deleting())
+
+	status := cr.Status.DeepCopy()
+	spec := cr.Spec.DeepCopy()
+	ok, err := secrets.Delete(ctx, e.bwCli, status.SecretId)
+	if err != nil {
+		return err
+	}
+	e.log.Debug("Secret Deleted", "id", status.SecretId, "name", spec.Name)
+	e.rec.Eventf(cr, corev1.EventTypeNormal, "SecretDeleted", "Secret '%s/%s' deleted", status.SecretId, spec.Name)
+
+	return nil
 }
 
 func (e *external) Create(ctx context.Context, mg resource.Managed) error {
-	return nil // noop
+	fmt.Println("CREATE")
+	cr, ok := mg.(*bwv1.BitwardenSecret)
+	if !ok {
+		return errors.New(errNotBitwardenSecret)
+	}
+
+	cr.SetConditions(prv1.Creating())
+
+	spec := cr.Spec.DeepCopy()
+
+	sec, err := secrets.Create(ctx, e.bwCli, spec.Secret)
+	if err != nil {
+		return err
+	}
+	cr.Status.SecretId = sec.Id
+	e.kube.Status().Update(ctx, cr)
+
+	e.log.Debug("Secret created", "id", sec.Id, "name", spec.Name)
+	e.rec.Eventf(cr, corev1.EventTypeNormal, "SecretCreated", "Secret '%s/%s' created", spec.Id, spec.Name)
+
+	return nil
 }

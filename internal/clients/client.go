@@ -50,12 +50,16 @@ func Unlock(ctx context.Context, c *Client, password string) (*Response, error) 
 	if err != nil {
 		return nil, err
 	}
-	values := map[string]string{"password": password}
+	values := struct {
+		Password string `json:"password"`
+	}{
+		Password: password,
+	}
 	req, err := httplib.Post(uri.String(), httplib.ToJSON(values))
 	if err != nil {
 		return nil, err
 	}
-
+	req.Header.Add("Content-Type", "application/json")
 	req = req.WithContext(ctx)
 
 	apiErr := &APIError{}
@@ -68,7 +72,6 @@ func Unlock(ctx context.Context, c *Client, password string) (*Response, error) 
 			httplib.ErrorJSON(apiErr, http.StatusOK),
 		},
 	})
-
 	return val, err
 }
 
