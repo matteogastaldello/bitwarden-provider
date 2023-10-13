@@ -30,44 +30,7 @@ func (m *ResponseGeneric) ValidData() error {
 		return errors.New("Not a valid data field")
 	}
 	return nil
-	// switch m.Data.(type) {
-	// case string:
-	// 	// handle string
-	// 	return nil
-	// case bwv1.Secret:
-	// 	// handle bwv1.Secret
-	// 	return nil
-	// default:
-	// 	// handle unexpected type
-	// 	return errors.New("Not a valid data field")
-	// }
 }
-
-// type SecretResponse struct {
-// 	Success bool        `json:"success"`
-// 	Data    bwv1.Secret `json:"data"`
-// }
-
-// func Get(ctx context.Context, cli *azuredevops.Client, opts GetOptions) (bool, map[string]interface{}) {
-// 	resp, err := http.Get(fmt.Sprintf("%s/object/item/%s", bw_server, id))
-
-// 	if err != nil {
-// 		log.Error(err, "Errore", "GET")
-// 	}
-
-// 	defer resp.Body.Close()
-
-// 	if resp.StatusCode != 200 {
-// 		return false, nil
-// 	}
-
-// 	var res map[string]interface{}
-
-// 	json.NewDecoder(resp.Body).Decode(&res)
-// 	// str, _ := json.Marshal(res)
-// 	// fmt.Println(fmt.Printf("\n\n%s\n\n", str))
-// 	return res["success"].(bool), res
-// }
 
 // Get retrieve a git repository.
 // GET https://dev.azure.com/{organization}/{project}/_apis/git/repositories/{repositoryId}?api-version=7.0

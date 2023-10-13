@@ -17,3 +17,6 @@ spec:
     login: 
       username: "matteo"
       password: "bcd"
+  connectorConfigRef:
+    namespace: default
+    name: connectorconfig-sample

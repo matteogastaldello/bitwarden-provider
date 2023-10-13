@@ -3,6 +3,8 @@
 # It should be run by config/default
 resources:
 - bases/bitwarden.provider.matteogastaldello.provider_bitwardensecrets.yaml
+- bases/bitwarden.provider.matteogastaldello.provider_connectorconfigs.yaml
+
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patches:

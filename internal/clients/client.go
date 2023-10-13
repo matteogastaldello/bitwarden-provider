@@ -1,10 +1,8 @@
 package bwclient
 
 import (
-	"context"
 	"fmt"
 	"net/http"
-	"path"
 
 	"github.com/lucasepe/httplib"
 )
@@ -32,6 +30,10 @@ type Response struct {
 	Data    map[string]interface{}
 }
 
+type ClientOptions struct {
+	Password string
+}
+
 func NewClient() *Client {
 	return &Client{
 		httpClient: httplib.NewClient(),
@@ -39,40 +41,6 @@ func NewClient() *Client {
 			Default: "http://host.docker.internal:8087",
 		},
 	}
-}
-
-func Unlock(ctx context.Context, c *Client, password string) (*Response, error) {
-	uri, err := httplib.NewURLBuilder(httplib.URLBuilderOptions{
-		BaseURL: c.BaseURL(Default),
-		Path:    path.Join("unlock"),
-	}).Build()
-
-	if err != nil {
-		return nil, err
-	}
-	values := struct {
-		Password string `json:"password"`
-	}{
-		Password: password,
-	}
-	req, err := httplib.Post(uri.String(), httplib.ToJSON(values))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Add("Content-Type", "application/json")
-	req = req.WithContext(ctx)
-
-	apiErr := &APIError{}
-
-	val := &Response{}
-
-	err = httplib.Fire(c.HTTPClient(), req, httplib.FireOptions{
-		ResponseHandler: httplib.FromJSON(val),
-		Validators: []httplib.HandleResponseFunc{
-			httplib.ErrorJSON(apiErr, http.StatusOK),
-		},
-	})
-	return val, err
 }
 
 func (c *Client) BaseURL(loc URIKey) string {

@@ -21,6 +21,7 @@ limitations under the License.
 package v1
 
 import (
+	commonv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -87,6 +88,11 @@ func (in *BitwardenSecretList) DeepCopyObject() runtime.Object {
 func (in *BitwardenSecretSpec) DeepCopyInto(out *BitwardenSecretSpec) {
 	*out = *in
 	out.ManagedSpec = in.ManagedSpec
+	if in.ConnectorConfigRef != nil {
+		in, out := &in.ConnectorConfigRef, &out.ConnectorConfigRef
+		*out = new(commonv1.Reference)
+		**out = **in
+	}
 	in.Secret.DeepCopyInto(&out.Secret)
 }
 

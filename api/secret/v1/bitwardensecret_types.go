@@ -71,9 +71,8 @@ type Secret struct {
 type BitwardenSecretSpec struct {
 	rtv1.ManagedSpec `json:",inline"`
 
-	//Credentials    *rtv1.CredentialSelectors `json:"credentials"`
-
-	Secret `json:"secret"`
+	ConnectorConfigRef *rtv1.Reference `json:"connectorConfigRef,omitempty"`
+	Secret             `json:"secret"`
 }
 
 // BitwardenSecretStatus defines the observed state of BitwardenSecret

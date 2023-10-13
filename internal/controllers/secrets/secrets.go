@@ -3,7 +3,6 @@ package secrets
 import (
 	"context"
 	"fmt"
-	"os"
 
 	prv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
 	bwclient "github.com/matteogastaldello/bitwarden-provider/internal/clients"
@@ -23,6 +22,8 @@ import (
 	"github.com/krateoplatformops/provider-runtime/pkg/ratelimiter"
 	"github.com/krateoplatformops/provider-runtime/pkg/reconciler"
 	"github.com/krateoplatformops/provider-runtime/pkg/resource"
+
+	"github.com/matteogastaldello/bitwarden-provider/internal/clients/unlocker"
 
 	bwv1 "github.com/matteogastaldello/bitwarden-provider/api/secret/v1"
 )
@@ -86,19 +87,18 @@ type external struct {
 
 func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler.ExternalObservation, error) {
 	fmt.Print("\nOBSERVE\n")
+	cr, ok := mg.(*bwv1.BitwardenSecret)
+	if !ok {
+		return reconciler.ExternalObservation{}, errors.New(errNotBitwardenSecret)
+	}
 
-	resp, err := bwclient.Unlock(ctx, e.bwCli, os.Getenv("BW_PASSWORD"))
+	resp, err := unlocker.Unlock(ctx, e.bwCli, &e.kube, cr.Spec.ConnectorConfigRef)
 
 	if err != nil {
 		return reconciler.ExternalObservation{}, err
 	}
 	if !resp.Success {
 		return reconciler.ExternalObservation{}, errors.New(errToUnlockVault)
-	}
-
-	cr, ok := mg.(*bwv1.BitwardenSecret)
-	if !ok {
-		return reconciler.ExternalObservation{}, errors.New(errNotBitwardenSecret)
 	}
 
 	status := cr.Status.DeepCopy()
@@ -139,6 +139,7 @@ func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
 		return errors.New(errNotBitwardenSecret)
 	}
 
+	//test AnnotationKeyManagementPolicy - non so se sia l'utilizzo corretto di questa impostazione
 	if condition := meta.IsActionAllowed(cr, meta.ActionDelete); !condition {
 		return errors.New("Action not allowed")
 	}
@@ -151,6 +152,10 @@ func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
 	if err != nil {
 		return err
 	}
+	if !ok {
+		return errors.New("Something went wrong deleting secret on remote server")
+	}
+
 	e.log.Debug("Secret Deleted", "id", status.SecretId, "name", spec.Name)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "SecretDeleted", "Secret '%s/%s' deleted", status.SecretId, spec.Name)
 
@@ -167,7 +172,6 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	cr.SetConditions(prv1.Creating())
 
 	spec := cr.Spec.DeepCopy()
-
 	sec, err := secrets.Create(ctx, e.bwCli, spec.Secret)
 	if err != nil {
 		return err
