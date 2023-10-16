@@ -2,11 +2,11 @@ package secrets
 
 import (
 	"context"
-	"fmt"
 
 	prv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
 	bwclient "github.com/matteogastaldello/bitwarden-provider/internal/clients"
 	"github.com/matteogastaldello/bitwarden-provider/internal/clients/secrets"
+	"github.com/matteogastaldello/bitwarden-provider/internal/resolvers"
 	"github.com/pkg/errors"
 
 	"k8s.io/client-go/tools/record"
@@ -70,10 +70,20 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (reconcile
 		return nil, errors.New(errNotBitwardenSecret)
 	}
 
+	cr, ok := mg.(*bwv1.BitwardenSecret)
+	if !ok {
+		return nil, errors.New(errNotBitwardenSecret)
+	}
+
+	opts, err := resolvers.ResolveConnectorConfig(ctx, c.kube, cr.Spec.ConnectorConfigRef)
+	if err != nil {
+		return nil, err
+	}
+
 	return &external{
 		kube:  c.kube,
 		log:   c.log,
-		bwCli: bwclient.NewClient(),
+		bwCli: bwclient.NewClient(opts.ApiUrl),
 		rec:   c.recorder,
 	}, nil
 }
@@ -86,14 +96,12 @@ type external struct {
 }
 
 func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler.ExternalObservation, error) {
-	fmt.Print("\nOBSERVE\n")
 	cr, ok := mg.(*bwv1.BitwardenSecret)
 	if !ok {
 		return reconciler.ExternalObservation{}, errors.New(errNotBitwardenSecret)
 	}
 
 	resp, err := unlocker.Unlock(ctx, e.bwCli, &e.kube, cr.Spec.ConnectorConfigRef)
-
 	if err != nil {
 		return reconciler.ExternalObservation{}, err
 	}
@@ -111,7 +119,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 
 	if *res {
 		e.log.Debug("Secret already exists", "id", status.SecretId, "name", spec.Name)
-		e.rec.Eventf(cr, corev1.EventTypeNormal, "AlredyExists", "Secret '%s/%s' already exists", status.SecretId, spec.Name)
+		e.rec.Eventf(cr, corev1.EventTypeNormal, "AlreadyExists", "Secret '%s/%s' already exists", status.SecretId, spec.Name)
 
 		cr.SetConditions(prv1.Available())
 		return reconciler.ExternalObservation{
@@ -133,15 +141,14 @@ func (e *external) Update(ctx context.Context, mg resource.Managed) error {
 }
 
 func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
-	fmt.Println("DELETE")
 	cr, ok := mg.(*bwv1.BitwardenSecret)
 	if !ok {
 		return errors.New(errNotBitwardenSecret)
 	}
 
-	//test AnnotationKeyManagementPolicy - non so se sia l'utilizzo corretto di questa impostazione
-	if condition := meta.IsActionAllowed(cr, meta.ActionDelete); !condition {
-		return errors.New("Action not allowed")
+	if !meta.IsActionAllowed(cr, meta.ActionDelete) {
+		e.log.Debug("External resource should not be deleted by provider, skip updating.")
+		return nil
 	}
 
 	cr.SetConditions(prv1.Deleting())
@@ -153,6 +160,8 @@ func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
 		return err
 	}
 	if !ok {
+		//Pause Reconciliation if something went wrong during delete on remote server
+		meta.AddAnnotations(cr, map[string]string{"krateo.io/paused": "true"})
 		return errors.New("Something went wrong deleting secret on remote server")
 	}
 
@@ -163,10 +172,14 @@ func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
 }
 
 func (e *external) Create(ctx context.Context, mg resource.Managed) error {
-	fmt.Println("CREATE")
 	cr, ok := mg.(*bwv1.BitwardenSecret)
 	if !ok {
 		return errors.New(errNotBitwardenSecret)
+	}
+
+	if !meta.IsActionAllowed(cr, meta.ActionCreate) {
+		e.log.Debug("External resource should not be created by provider, skip updating.")
+		return nil
 	}
 
 	cr.SetConditions(prv1.Creating())

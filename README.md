@@ -1,31 +1,50 @@
-# bitwarden-provider
-// TODO(user): Add simple overview of use/purpose
+# Bitwarden Provider
+Bitwarden Provider that handles bitwarden secrets (till now😀)
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+## Notes
+Le API di Bitwareden non sono pubbliche in versione free. Bitwarden mette comunque a disposizione tramite il client "cli" di fare il redirect di simulare le chiamate ad una api creando in locale un server che poi redirige le chiamate al server pubblico di bitwarden. 
+Per questo motivo il funzionamento è leggermente diverso rispetto ad una api pubblica. Di seguito la spiegazione:
+- il vault viene prima sbloccato tramite una chiamata POST con payload `{"password": "my-password"}` a `localhost:PORT/unlock`. Questa chiamata di fatto sblocca il Vault per tutte le successive chiamate (a cui non viene più richiesta alcuna credenziale). Ho implementato la funzione Unlock in `internal/clients/unlocker` per portare a termine questa operazione.
+- per simulare il funzionamento dell'operator è quindi necessario installare Bitwarden CLI e lanciare il comando `bw serve` (https://bitwarden.com/help/cli/#serve) e impostare lo spec della risorsa ConnectorConfig->apiUrl (vedi `samples/connectorConfig.yaml`)
+- La password di bitwarden deve essere impostata come k8s secret tramite `kubectl create secret generic bitwarden-password --from-literal=password=my-password`
 
 ## Getting Started
 You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
 **Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
 
 ### Running on the cluster
-1. Install Instances of Custom Resources:
+1. Start your cluster: (KIND or MINIKUBE)
 
 ```sh
-kubectl apply -k config/samples/
+minikube start
 ```
 
-2. Build and push your image to the location specified by `IMG`:
+2. Install CRDs:
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/bitwarden-provider:tag
+make install
 ```
+3. Edit Samples in `samples/` folder according to your bw serve config
 
-3. Deploy the controller to the cluster with the image specified by `IMG`:
+
+4. Install Instances of Custom Resources:
 
 ```sh
-make deploy IMG=<some-registry>/bitwarden-provider:tag
+kubectl apply -f samples/
 ```
+
+5. Install Instances of Custom Resources:
+
+```sh
+make install
+```
+
+6. Start your controller:
+
+```sh
+make run
+```
+
 
 ### Uninstall CRDs
 To delete the CRDs from the cluster:

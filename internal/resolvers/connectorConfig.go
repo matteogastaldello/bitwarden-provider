@@ -44,6 +44,7 @@ func ResolveConnectorConfig(ctx context.Context, kube client.Client, ref *rtv1.R
 		return opts, err
 	}
 
+	opts.ApiUrl = cfg.Spec.ApiUrl
 	opts.Password = password
 
 	return opts, nil

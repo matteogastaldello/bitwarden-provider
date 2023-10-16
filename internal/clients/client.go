@@ -7,13 +7,6 @@ import (
 	"github.com/lucasepe/httplib"
 )
 
-const (
-	ApiVersionKey  = "api-version"
-	ApiVersionVal  = "7.0"
-	ApiPreviewFlag = "-preview"
-	UserAgent      = "krateo/azuredevops-provider"
-)
-
 type URIKey string
 
 const (
@@ -31,14 +24,15 @@ type Response struct {
 }
 
 type ClientOptions struct {
+	ApiUrl   string
 	Password string
 }
 
-func NewClient() *Client {
+func NewClient(apiURL string) *Client {
 	return &Client{
 		httpClient: httplib.NewClient(),
 		uriMap: map[URIKey]string{
-			Default: "http://host.docker.internal:8087",
+			Default: apiURL,
 		},
 	}
 }

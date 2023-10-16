@@ -3,7 +3,7 @@ kind: ConnectorConfig
 metadata:
   name: connectorconfig-sample
 spec:
-  apiUrl: https://dev.azure.com
+  apiUrl: http://host.docker.internal:8087 
   credentials:
     secretRef:
       namespace: default

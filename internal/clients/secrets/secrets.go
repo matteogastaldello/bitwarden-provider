@@ -32,8 +32,7 @@ func (m *ResponseGeneric) ValidData() error {
 	return nil
 }
 
-// Get retrieve a git repository.
-// GET https://dev.azure.com/{organization}/{project}/_apis/git/repositories/{repositoryId}?api-version=7.0
+// Get retrieve a secre.
 func (s *ResponseGeneric) Get(ctx context.Context, cli *client.Client, secretId string) (*bwv1.Secret, error) {
 	uri, err := httplib.NewURLBuilder(httplib.URLBuilderOptions{
 		BaseURL: cli.BaseURL(client.Default),
@@ -80,18 +79,10 @@ func Exists(ctx context.Context, cli *client.Client, secretId string) (*bool, er
 
 	err = httplib.Fire(cli.HTTPClient(), req, httplib.FireOptions{
 		ResponseHandler: httplib.FromJSON(val),
-		// Validators: []httplib.HandleResponseFunc{
-		// 	httplib.ErrorJSON(apiErr, http.StatusOK), httplib.ErrorJSON(apiErr, http.StatusBadRequest),
-		// },
 	})
 	if err != nil {
 		return &retVal, err
 	}
-
-	// err = val.ValidData()
-	// if err != nil {
-	// 	return false, err
-	// }
 
 	return &val.Success, nil
 }
@@ -149,32 +140,14 @@ func Delete(ctx context.Context, cli *client.Client, secretId string) (bool, err
 	}
 	req = req.WithContext(ctx)
 
-	//apiErr := &client.APIError{}
 	val := &ResponseGeneric{}
 
 	err = httplib.Fire(cli.HTTPClient(), req, httplib.FireOptions{
 		ResponseHandler: httplib.FromJSON(val),
-		// Validators: []httplib.HandleResponseFunc{
-		// 	httplib.ErrorJSON(apiErr, http.StatusOK), httplib.ErrorJSON(apiErr, http.StatusBadRequest),
-		// },
 	})
 	if err != nil {
 		return false, err
 	}
-	b, err := json.Marshal(val)
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println(string(b))
-
-	if err != nil {
-		return false, err
-	}
-
-	// err = val.ValidData()
-	// if err != nil {
-	// 	return false, err
-	// }
 
 	return val.Success, nil
 }

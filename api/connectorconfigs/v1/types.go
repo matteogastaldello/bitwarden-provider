@@ -24,7 +24,7 @@ type ConnectorConfigSpec struct {
 }
 
 //+kubebuilder:object:root=true
-//+kubebuilder:resource:scope=Cluster,categories={krateo,azuredevops}
+//+kubebuilder:resource:scope=Cluster,categories={krateo,bitwarden-vault}
 
 // ConnectorConfigSpec is the Schema for the Bitwarden Client
 type ConnectorConfig struct {
